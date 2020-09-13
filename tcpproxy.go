@@ -9,12 +9,14 @@ import (
 
 // Proxy is a TCP proxy. Wrapper arround https://github.com/inetaf/tcpproxy
 type Proxy struct {
-	Proxy     tcpproxy.Proxy
+	Proxy     *tcpproxy.Proxy
 	DialProxy *tcpproxy.DialProxy
 
 	listenAddr       string
 	connections      map[net.Conn]struct{}
 	connectionsMutex sync.Mutex
+
+	proxyMutex sync.Mutex
 }
 
 // New creates a new proxy instance.
@@ -27,8 +29,6 @@ func New(listenAddr string, toAddr string) *Proxy {
 		listenAddr:  listenAddr,
 		connections: map[net.Conn]struct{}{},
 	}
-
-	p.Proxy.AddRoute(listenAddr, p)
 
 	return p
 }
@@ -68,6 +68,17 @@ func (p *Proxy) HandleConn(conn net.Conn) {
 
 // Start starts the proxy.
 func (p *Proxy) Start() error {
+	p.proxyMutex.Lock()
+	defer p.proxyMutex.Unlock()
+
+	if p.Proxy != nil {
+		return nil
+	}
+
+	p.Proxy = &tcpproxy.Proxy{}
+
+	p.Proxy.AddRoute(p.listenAddr, p)
+
 	return p.Proxy.Start()
 }
 
@@ -87,9 +98,18 @@ func (p *Proxy) CloseConnections() {
 
 // Close closes the TCP listener and closes all active connections.
 func (p *Proxy) Close() error {
+	p.proxyMutex.Lock()
+	defer p.proxyMutex.Unlock()
+
+	if p.Proxy == nil {
+		return nil
+	}
+
 	err := p.Proxy.Close()
 
 	p.CloseConnections()
+
+	p.Proxy = nil
 
 	return err
 }
