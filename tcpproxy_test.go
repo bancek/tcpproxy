@@ -36,7 +36,7 @@ func TestProxy(t *testing.T) {
 	handler = func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		// we need to write a few KB for http server to flush
-		w.Write(make([]byte, 100*1024))
+		_, _ = w.Write(make([]byte, 100*1024))
 
 		time.Sleep(500 * time.Millisecond)
 
@@ -46,7 +46,7 @@ func TestProxy(t *testing.T) {
 
 		time.Sleep(500 * time.Millisecond)
 
-		w.Write([]byte("test"))
+		_, _ = w.Write([]byte("test"))
 
 		doneCh <- struct{}{}
 	}
@@ -70,7 +70,7 @@ func TestProxy(t *testing.T) {
 	}
 
 	handler = func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("test"))
+		_, _ = w.Write([]byte("test"))
 	}
 
 	resp, err = http.Get(u.String())
