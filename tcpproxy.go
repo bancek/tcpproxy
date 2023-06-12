@@ -3,11 +3,12 @@ package tcpproxy
 import (
 	"net"
 	"sync"
+	"time"
 
 	"inet.af/tcpproxy"
 )
 
-// Proxy is a TCP proxy. Wrapper arround inet.af/tcpproxy
+// Proxy is a TCP proxy. Wrapper around https://inet.af/tcpproxy
 type Proxy struct {
 	Proxy     *tcpproxy.Proxy
 	DialProxy *tcpproxy.DialProxy
@@ -15,8 +16,8 @@ type Proxy struct {
 	listenAddr       string
 	connections      map[net.Conn]struct{}
 	connectionsMutex sync.Mutex
-
-	proxyMutex sync.Mutex
+	onServerRead     func(c net.Conn, b []byte) (n int, err error)
+	onServerWrite    func(c net.Conn, b []byte) (n int, err error)
 }
 
 // New creates a new proxy instance.
@@ -24,6 +25,7 @@ func New(listenAddr string, toAddr string) *Proxy {
 	dialProxy := &tcpproxy.DialProxy{Addr: toAddr}
 
 	p := &Proxy{
+		Proxy:     nil,
 		DialProxy: dialProxy,
 
 		listenAddr:  listenAddr,
@@ -53,6 +55,11 @@ func (p *Proxy) ListenAddr() string {
 
 // HandleConn is used for hooking into inet.af/tcpproxy
 func (p *Proxy) HandleConn(conn net.Conn) {
+	conn = &connWrapper{
+		proxy: p,
+		conn:  conn,
+	}
+
 	p.connectionsMutex.Lock()
 	p.connections[conn] = struct{}{}
 	p.connectionsMutex.Unlock()
@@ -68,13 +75,6 @@ func (p *Proxy) HandleConn(conn net.Conn) {
 
 // Start starts the proxy.
 func (p *Proxy) Start() error {
-	p.proxyMutex.Lock()
-	defer p.proxyMutex.Unlock()
-
-	if p.Proxy != nil {
-		return nil
-	}
-
 	p.Proxy = &tcpproxy.Proxy{}
 
 	p.Proxy.AddRoute(p.listenAddr, p)
@@ -98,18 +98,64 @@ func (p *Proxy) CloseConnections() {
 
 // Close closes the TCP listener and closes all active connections.
 func (p *Proxy) Close() error {
-	p.proxyMutex.Lock()
-	defer p.proxyMutex.Unlock()
-
-	if p.Proxy == nil {
-		return nil
-	}
-
 	err := p.Proxy.Close()
-
-	p.CloseConnections()
 
 	p.Proxy = nil
 
+	p.CloseConnections()
+
 	return err
+}
+
+// SetOnServerRead sets TCP connection Read interceptor. Called when client calls Write.
+func (p *Proxy) SetOnServerRead(onServerRead func(c net.Conn, b []byte) (n int, err error)) {
+	p.onServerRead = onServerRead
+}
+
+// SetOnServerWrite sets TCP connection Write interceptor. Called when client calls Read.
+func (p *Proxy) SetOnServerWrite(onServerWrite func(c net.Conn, b []byte) (n int, err error)) {
+	p.onServerWrite = onServerWrite
+}
+
+type connWrapper struct {
+	proxy *Proxy
+	conn  net.Conn
+}
+
+func (c *connWrapper) Read(b []byte) (n int, err error) {
+	if c.proxy.onServerRead != nil {
+		return c.proxy.onServerRead(c.conn, b)
+	}
+	return c.conn.Read(b)
+}
+
+func (c *connWrapper) Write(b []byte) (n int, err error) {
+	if c.proxy.onServerWrite != nil {
+		return c.proxy.onServerWrite(c.conn, b)
+	}
+	return c.conn.Write(b)
+}
+
+func (c *connWrapper) Close() error {
+	return c.conn.Close()
+}
+
+func (c *connWrapper) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *connWrapper) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *connWrapper) SetDeadline(t time.Time) error {
+	return c.conn.SetDeadline(t)
+}
+
+func (c *connWrapper) SetReadDeadline(t time.Time) error {
+	return c.conn.SetReadDeadline(t)
+}
+
+func (c *connWrapper) SetWriteDeadline(t time.Time) error {
+	return c.conn.SetWriteDeadline(t)
 }
