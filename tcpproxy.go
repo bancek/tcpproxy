@@ -4,10 +4,10 @@ import (
 	"net"
 	"sync"
 
-	"github.com/inetaf/tcpproxy"
+	"inet.af/tcpproxy"
 )
 
-// Proxy is a TCP proxy. Wrapper arround https://github.com/inetaf/tcpproxy
+// Proxy is a TCP proxy. Wrapper arround inet.af/tcpproxy
 type Proxy struct {
 	Proxy     *tcpproxy.Proxy
 	DialProxy *tcpproxy.DialProxy
@@ -51,7 +51,7 @@ func (p *Proxy) ListenAddr() string {
 	return p.listenAddr
 }
 
-// HandleConn is used for hooking into github.com/inetaf/tcpproxy
+// HandleConn is used for hooking into inet.af/tcpproxy
 func (p *Proxy) HandleConn(conn net.Conn) {
 	p.connectionsMutex.Lock()
 	p.connections[conn] = struct{}{}
